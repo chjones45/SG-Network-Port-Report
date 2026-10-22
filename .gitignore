@@ -1,0 +1,3 @@
+# Report output from real grids - never commit
+sg-network-report/
+*_sg-network-raw.txt

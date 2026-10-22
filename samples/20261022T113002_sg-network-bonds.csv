@@ -1,0 +1,4 @@
+"Node","Bond","State","Mode","Networks","EffectiveSpeed","EffectiveSpeedMbps","KernelSpeed","MembersUp","Members","ActiveSlave","LacpPartnerMac","ActiveAggregatorId","HashPolicy","LacpRate","Mtu"
+"dc1-sn1","bond0","UP","IEEE 802.3ad Dynamic link aggregation","Grid, Client","100 Gb/s","100000","100 Gb/s","4/4","hic1 (25 Gb/s, Up), hic2 (25 Gb/s, Up), hic3 (25 Gb/s, Up), hic4 (25 Gb/s, Up)","N/A","02:00:00:aa:bb:cc","1","layer2 (0)","slow","1500"
+"dc1-sn2","bond0","UP","fault-tolerance (active-backup)","Grid","25 Gb/s","25000","25 Gb/s","1/2","hic2 (25 Gb/s, Up), hic4 (25 Gb/s, Down)","hic2","N/A","N/A","N/A","N/A","1500"
+"dc1-sn2","bond1","UP","fault-tolerance (active-backup)","Client","25 Gb/s","25000","25 Gb/s","2/2","hic1 (25 Gb/s, Up), hic3 (25 Gb/s, Up)","hic1","N/A","N/A","N/A","N/A","1500"
