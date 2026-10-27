@@ -41,7 +41,7 @@ Password handling:
     sudo runs as root, so 'su - root' does not need a separate root password.
 
 .NOTES
-Version: 0.9.0 (also shown on screen at start-up). Increment $script:SgToolVersion with every change.
+Version: 0.9.2 (also shown on screen at start-up). Increment $script:SgToolVersion with every change.
   0.1.0  Initial release: sudo bash launcher.
   0.2.0  Launch run-each-node through sudo su - root.
   0.3.0  Version display; fallback launch methods (pty, detached pty); diagnostics on rejection.
@@ -58,6 +58,11 @@ Version: 0.9.0 (also shown on screen at start-up). Increment $script:SgToolVersi
          files sort and group together.
   0.9.0  Timestamps (file names and report header) use the local time of the machine running
          the script instead of UTC; the report header shows the UTC offset.
+  0.9.1  Bond detection now supports non-standard bond interface names (for example, Admin
+      Network eth1 as a bond on physical appliances), so parent bond/member reporting is
+      correct in summary CSV and text reports.
+  0.9.2  Summary CSV now includes explicit per-network parent bond details for Grid/Admin/Client:
+      <Network>ParentBondMode and <Network>ParentBondActiveSlave.
 
 Requires Windows PowerShell 5.1 or PowerShell 7+ on Windows, and the Windows OpenSSH client 8.4+
 (SSH_ASKPASS_REQUIRE support; current Windows 10/11 and Server builds ship a suitable ssh.exe).
@@ -101,7 +106,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:SgToolVersion = '0.9.0'
+$script:SgToolVersion = '0.9.2'
 $script:SgMarker = '@@SGNET@@'
 # StorageGRID fixed interface roles.
 $script:SgNetworkInterfaces = [ordered]@{
@@ -740,6 +745,34 @@ function Get-SgNaturalSortKey {
     return [regex]::Replace($Name, '\d+', { param($m) $m.Value.PadLeft(6, '0') })
 }
 
+function Get-SgBondInterfaceNames {
+    <#
+    .SYNOPSIS
+    Discovers bond interface names, including non-standard names (for example eth1 on
+    physical appliances), from all parsed sources.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]$Links,
+        [Parameter(Mandatory = $true)][hashtable]$BondProc,
+        [Parameter(Mandatory = $true)][hashtable]$SysNet
+    )
+
+    $bondLookup = @{}
+    foreach ($name in @($BondProc.Keys)) {
+        if (-not [string]::IsNullOrWhiteSpace($name)) { $bondLookup[$name] = $true }
+    }
+    foreach ($link in @($Links.Values)) {
+        if ($null -ne $link -and -not [string]::IsNullOrWhiteSpace($link.Master)) { $bondLookup[$link.Master] = $true }
+    }
+    foreach ($name in @($SysNet.Keys)) {
+        $master = $SysNet[$name].Master
+        if (-not [string]::IsNullOrWhiteSpace($master)) { $bondLookup[$master] = $true }
+    }
+
+    return @($bondLookup.Keys | Sort-Object -Unique | Sort-Object { Get-SgNaturalSortKey -Name $_ })
+}
+
 function Resolve-SgNetworkPath {
     <#
     .SYNOPSIS
@@ -750,7 +783,8 @@ function Resolve-SgNetworkPath {
     param(
         [Parameter(Mandatory = $true)][string]$Interface,
         [Parameter(Mandatory = $true)]$Links,
-        [Parameter(Mandatory = $true)][hashtable]$Vlans
+        [Parameter(Mandatory = $true)][hashtable]$Vlans,
+        [Parameter(Mandatory = $false)][string[]]$BondNames = @()
     )
 
     if (-not $Links.Contains($Interface)) {
@@ -761,10 +795,14 @@ function Resolve-SgNetworkPath {
     $path = New-Object System.Collections.Generic.List[string]
     $current = $Interface
     $bond = ''
+    $bondLookup = @{}
+    foreach ($bondName in @($BondNames)) {
+        if (-not [string]::IsNullOrWhiteSpace($bondName)) { $bondLookup[$bondName] = $true }
+    }
     for ($hop = 0; $hop -lt 6 -and -not [string]::IsNullOrWhiteSpace($current); $hop++) {
         if ($path.Contains($current)) { break }
         $path.Add($current)
-        if ($current -match '^bond\d+$') { $bond = $current; break }
+        if ($current -match '^bond\d+$' -or $bondLookup.ContainsKey($current)) { $bond = $current; break }
 
         $next = ''
         if ($Vlans.ContainsKey($current)) {
@@ -865,17 +903,18 @@ function Get-SgNodeNetworkMap {
     $sysNet = ConvertFrom-SgSysNet -Lines $Node.Sections['SYSNET'].ToArray()
     $issues = New-Object System.Collections.Generic.List[string]
 
-    $bondNames = @(@($links.Keys) + @($bondProc.Keys) | Where-Object { $_ -match '^bond\d+$' } | Sort-Object -Unique | Sort-Object { [int]($_ -replace '\D', '') })
+    $bondNames = @(Get-SgBondInterfaceNames -Links $links -BondProc $bondProc -SysNet $sysNet)
+    $sgBondNames = @($bondNames | Where-Object { $_ -match '^bond\d+$' })
 
     # User rule: bond0 only = all ports aggregated (Aggregate/LACP); bond0 + bond1 = Fixed.
-    if ($bondNames.Count -eq 0) { $portBondMode = 'N/A (no bond interfaces)' }
-    elseif ($bondNames -contains 'bond1') { $portBondMode = 'Fixed' }
+    if ($sgBondNames.Count -eq 0) { $portBondMode = 'N/A (no bond interfaces)' }
+    elseif ($sgBondNames -contains 'bond1') { $portBondMode = 'Fixed' }
     else { $portBondMode = 'Aggregate/LACP' }
 
     # Networks first, so bonds and ports can be labelled with the networks they carry.
     $networks = [ordered]@{}
     foreach ($networkName in $script:SgNetworkInterfaces.Keys) {
-        $networks[$networkName] = Resolve-SgNetworkPath -Interface $script:SgNetworkInterfaces[$networkName] -Links $links -Vlans $vlans
+        $networks[$networkName] = Resolve-SgNetworkPath -Interface $script:SgNetworkInterfaces[$networkName] -Links $links -Vlans $vlans -BondNames $bondNames
     }
     $bondNetworks = @{}
     foreach ($networkName in $networks.Keys) {
@@ -1039,7 +1078,9 @@ function Get-SgNodeNetworkMap {
         }
     }
     foreach ($name in @($portBond.Keys) + @($portNetworks.Keys)) { $portNames.Add($name) }
-    $portNames = @($portNames | Where-Object { $_ -and $_ -ne 'lo' -and $_ -notmatch '^bond\d+$' } | Sort-Object -Unique | Sort-Object { Get-SgNaturalSortKey -Name $_ })
+    $bondNameLookup = @{}
+    foreach ($bondName in @($bondNames)) { $bondNameLookup[$bondName] = $true }
+    $portNames = @($portNames | Where-Object { $_ -and $_ -ne 'lo' -and -not $bondNameLookup.ContainsKey($_) } | Sort-Object -Unique | Sort-Object { Get-SgNaturalSortKey -Name $_ })
 
     $ports = New-Object System.Collections.Generic.List[object]
     foreach ($name in $portNames) {
@@ -1097,8 +1138,16 @@ function Get-SgNodeNetworkMap {
         Bonds        = ($bondNames -join ', ')
     }
     foreach ($row in $networkRows) {
+        $parentBondMode = ''
+        $parentBondActiveSlave = ''
+        if ($row.ParentBond -and $row.ParentBond -ne 'None' -and $bondByName.ContainsKey($row.ParentBond)) {
+            $parentBondMode = $bondByName[$row.ParentBond].Mode
+            $parentBondActiveSlave = $bondByName[$row.ParentBond].ActiveSlave
+        }
         $summary["$($row.Network)Interface"] = $row.Interface
         $summary["$($row.Network)ParentBond"] = $row.ParentBond
+        $summary["$($row.Network)ParentBondMode"] = $parentBondMode
+        $summary["$($row.Network)ParentBondActiveSlave"] = $parentBondActiveSlave
         $summary["$($row.Network)Vlan"] = $row.Vlan
         $summary["$($row.Network)Ports"] = $row.Ports
         $summary["$($row.Network)Speed"] = $(if ($row.Present) { $row.Speed } else { '' })

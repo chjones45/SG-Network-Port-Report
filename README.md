@@ -26,9 +26,9 @@ For every node in the grid:
 
 | Item | How it is determined |
 |------|----------------------|
-| **Port Bond Mode** | `bond0` and `bond1` present = **Fixed**; only `bond0` = **Aggregate/LACP**; no bonds = **N/A (no bond interfaces)** (for example, VMs) |
+| **Port Bond Mode** | `bond0` and `bond1` present = **Fixed**; only `bond0` = **Aggregate/LACP**; no StorageGRID bond interfaces = **N/A (no bond interfaces)** (for example, VMs) |
 | **Grid Network** (`eth0`) | Parent bond from `eth0@bondN` in `ip link show` |
-| **Admin Network** (`eth1`) | Parent bond or physical port (for example, `mtc1`) |
+| **Admin Network** (`eth1`) | Parent bond (including non-standard names such as `eth1` on some appliances) or physical port (for example, `mtc1`) |
 | **Client Network** (`eth2`) | Parent bond from `eth2@bondN` in `ip link show` |
 | **VLAN ID** | From `/proc/net/vlan/config`. If the interface exists but has no VLAN entry, it is **Untagged** |
 | **Network speed** | Effective speed of the bond or port carrying the network |
@@ -66,7 +66,7 @@ No PowerShell modules are needed, and nothing is installed on the grid.
    ```
 
    ```text
-   Invoke-SgNetworkPortReport version 0.9.0
+  Invoke-SgNetworkPortReport version 0.9.2
    Enter the URL, FQDN or IP address of the StorageGRID Primary Admin Node: https://grid-admin.example.com:8443/
    Password for admin@grid-admin.example.com (also used for sudo): **************
    Connecting to admin@grid-admin.example.com:22 and running run-each-node --parallel (this can take a minute) ...

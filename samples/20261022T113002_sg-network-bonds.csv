@@ -2,3 +2,5 @@
 "dc1-sn1","bond0","UP","IEEE 802.3ad Dynamic link aggregation","Grid, Client","100 Gb/s","100000","100 Gb/s","4/4","hic1 (25 Gb/s, Up), hic2 (25 Gb/s, Up), hic3 (25 Gb/s, Up), hic4 (25 Gb/s, Up)","N/A","02:00:00:aa:bb:cc","1","layer2 (0)","slow","1500"
 "dc1-sn2","bond0","UP","fault-tolerance (active-backup)","Grid","25 Gb/s","25000","25 Gb/s","1/2","hic2 (25 Gb/s, Up), hic4 (25 Gb/s, Down)","hic2","N/A","N/A","N/A","N/A","1500"
 "dc1-sn2","bond1","UP","fault-tolerance (active-backup)","Client","25 Gb/s","25000","25 Gb/s","2/2","hic1 (25 Gb/s, Up), hic3 (25 Gb/s, Up)","hic1","N/A","N/A","N/A","N/A","1500"
+"dc1-adm1","bond0","UP","IEEE 802.3ad Dynamic link aggregation","Grid, Client","200 Gb/s","200000","200 Gb/s","2/4","hic1 (100 Gb/s, Up), hic2 (N/A, Down), hic3 (100 Gb/s, Up), hic4 (N/A, Down)","N/A","02:00:00:dd:ee:ff","1","layer2+3 (2)","fast","1500"
+"dc1-adm1","eth1","UP","fault-tolerance (active-backup)","Admin","1 Gb/s","1000","1 Gb/s","1/1","mtc1 (1 Gb/s, Up)","mtc1","N/A","N/A","N/A","N/A","1500"

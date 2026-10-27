@@ -1,22 +1,51 @@
-StorageGRID Network Port Report (Invoke-SgNetworkPortReport version 0.9.0)
+StorageGRID Network Port Report (Invoke-SgNetworkPortReport version 0.9.2)
 Generated: 2026-10-22 11:30:24 (UTC+11:00)
 Primary Admin Node: grid-admin.example.com
-Nodes: 3
+Nodes: 4
 Networks: Grid = eth0, Admin = eth1, Client = eth2
 Speeds: network/bond speed = sum of member ports carrying traffic (802.3ad: up members in the
         active aggregator; active-backup: the active port). Port speed is the negotiated link speed.
 ====================================================================================================
 
 OVERVIEW
-  Node    PortBondMode             Grid                      Admin                  Client                    Issues
-  ----    ------------             ----                      -----                  ------                    ------
-  dc1-gw1 N/A (no bond interfaces) eth0, Untagged, 10 Gb/s   N/A                    N/A                            0
-  dc1-sn1 Aggregate/LACP           bond0, VLAN 100, 100 Gb/s mtc1, Untagged, 1 Gb/s bond0, Untagged, 100 Gb/s      0
-  dc1-sn2 Fixed                    bond0, Untagged, 25 Gb/s  N/A                    bond1, VLAN 200, 25 Gb/s       1
+  Node     PortBondMode             Grid                      Admin                  Client                    Issues
+  ----     ------------             ----                      -----                  ------                    ------
+  dc1-adm1 Aggregate/LACP           bond0, VLAN 134, 200 Gb/s eth1, Untagged, 1 Gb/s bond0, VLAN 13, 200 Gb/s      2
+  dc1-gw1  N/A (no bond interfaces) eth0, Untagged, 10 Gb/s   N/A                    N/A                            0
+  dc1-sn1  Aggregate/LACP           bond0, VLAN 100, 100 Gb/s mtc1, Untagged, 1 Gb/s bond0, Untagged, 100 Gb/s      0
+  dc1-sn2  Fixed                    bond0, Untagged, 25 Gb/s  N/A                    bond1, VLAN 200, 25 Gb/s       1
 
 ISSUES
-  - [grid] Grid Network MTU is not the same on every node - MTU 1500 on 2 node(s): dc1-gw1, dc1-sn2 | MTU 1400 on 1 node(s): dc1-sn1
+  - [grid] Grid Network MTU is not the same on every node - MTU 1500 on 3 node(s): dc1-adm1, dc1-gw1, dc1-sn2 | MTU 1400 on 1 node(s): dc1-sn1
+  - [dc1-adm1] bond0 member hic2 is down
+  - [dc1-adm1] bond0 member hic4 is down
   - [dc1-sn2] bond0 member hic4 is down
+
+====================================================================================================
+Node: dc1-adm1    Port Bond Mode: Aggregate/LACP
+  Networks:
+    Network Interface ParentBond Vlan     Ports               Speed    Mtu  State Address         Path
+    ------- --------- ---------- ----     -----               -----    ---  ----- -------         ----
+    Grid    eth0      bond0      134      hic1 hic2 hic3 hic4 200 Gb/s 1500 UP    10.100.0.31/24  eth0 -> bond0
+    Admin   eth1      eth1       Untagged mtc1                1 Gb/s   1500 UP    192.168.1.31/24 eth1
+    Client  eth2      bond0      13       hic1 hic2 hic3 hic4 200 Gb/s 1500 UP    172.16.0.31/24  eth2 -> bond0
+  Bonds:
+    Bond  State Mode                                  Networks     EffectiveSpeed KernelSpeed MembersUp ActiveSlave LacpPartnerMac    HashPolicy   Mtu
+    ----  ----- ----                                  --------     -------------- ----------- --------- ----------- --------------    ----------   ---
+    bond0 UP    IEEE 802.3ad Dynamic link aggregation Grid, Client 200 Gb/s       200 Gb/s    2/4       N/A         02:00:00:dd:ee:ff layer2+3 (2) 1500
+    eth1  UP    fault-tolerance (active-backup)       Admin        1 Gb/s         1 Gb/s      1/1       mtc1        N/A             N/A          1500
+  Ports:
+    Port Status      Bond  Networks     Speed    Duplex LinkDetected Mtu  Mac               AggregatorId LinkFailures
+    ---- ------      ----  --------     -----    ------ ------------ ---  ---               ------------ ------------
+    hic1 Up - active bond0 Grid, Client 100 Gb/s Full   yes          1500 46:10:4b:15:2b:01 1            0
+    hic2 Down        bond0 Grid, Client N/A      N/A    no           1500 46:10:4b:15:2b:02 2            0
+    hic3 Up - active bond0 Grid, Client 100 Gb/s Full   yes          1500 46:10:4b:15:2b:03 1            0
+    hic4 Down        bond0 Grid, Client N/A      N/A    no           1500 46:10:4b:15:2b:04 2            0
+    mtc1 Up - active eth1  Admin        1 Gb/s   Full   yes          1500 f0:b2:b9:0f:41:ab N/A          0
+    mtc2 Unused      N/A   N/A          N/A      N/A    no           1500 f0:b2:b9:0f:41:aa N/A          N/A
+  Issues:
+    - bond0 member hic2 is down
+    - bond0 member hic4 is down
 
 ====================================================================================================
 Node: dc1-gw1    Port Bond Mode: N/A (no bond interfaces)
@@ -80,6 +109,7 @@ Node: dc1-sn2    Port Bond Mode: Fixed
 
 ====================================================================================================
 Other run-each-node output (check for nodes that could not be reached):
+  Running on node dc1-adm1
   Running on node dc1-sn1
   Running on node dc1-sn2
   Running on node dc1-gw1

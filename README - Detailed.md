@@ -33,9 +33,9 @@ For every node in the grid:
 
 | Item | How it is determined |
 |------|----------------------|
-| **Port Bond Mode** | `bond0` and `bond1` present = **Fixed**; only `bond0` = **Aggregate/LACP**; no bonds = **N/A (no bond interfaces)** (for example, VMs) |
+| **Port Bond Mode** | `bond0` and `bond1` present = **Fixed**; only `bond0` = **Aggregate/LACP**; no StorageGRID bond interfaces = **N/A (no bond interfaces)** (for example, VMs) |
 | **Grid Network** (`eth0`) | Parent bond from `eth0@bondN` in `ip link show` |
-| **Admin Network** (`eth1`) | Parent bond or physical port (for example, `mtc1`) |
+| **Admin Network** (`eth1`) | Parent bond (including non-standard names such as `eth1` on some appliances) or physical port (for example, `mtc1`) |
 | **Client Network** (`eth2`) | Parent bond from `eth2@bondN` in `ip link show` |
 | **VLAN ID** | From `/proc/net/vlan/config`. If the interface exists but has no VLAN entry, it is **Untagged** |
 | **Network speed** | Effective speed of the bond or port carrying the network |
@@ -73,7 +73,7 @@ No PowerShell modules are needed, and nothing is installed on the grid.
    ```
 
    ```text
-   Invoke-SgNetworkPortReport version 0.9.0
+  Invoke-SgNetworkPortReport version 0.9.2
    Enter the URL, FQDN or IP address of the StorageGRID Primary Admin Node: https://grid-admin.example.com:8443/
    Password for admin@grid-admin.example.com (also used for sudo): **************
    Connecting to admin@grid-admin.example.com:22 and running run-each-node --parallel (this can take a minute) ...
@@ -176,11 +176,16 @@ sorted and grouped together.
 ### Summary CSV columns
 
 `Node`, `DataComplete`, `PortBondMode`, `Bonds`; then for each of `Grid`, `Admin` and `Client`:
-`<Net>Interface`, `<Net>ParentBond`, `<Net>Vlan`, `<Net>Ports`, `<Net>Speed`, `<Net>Mtu`,
-`<Net>Address`, `<Net>State`; then `BondSummary`, `IssueCount`, `Issues`.
+`<Net>Interface`, `<Net>ParentBond`, `<Net>ParentBondMode`, `<Net>ParentBondActiveSlave`,
+`<Net>Vlan`, `<Net>Ports`, `<Net>Speed`, `<Net>Mtu`, `<Net>Address`, `<Net>State`; then
+`BondSummary`, `IssueCount`, `Issues`.
 
 - `ParentBond` is `None` when the network uses a physical port directly, such as on VMs or `eth1`
   on `mtc1`.
+- `ParentBond` can also be a non-standard bond interface name (for example `eth1` on some physical
+  appliances), not only `bond0`/`bond1`.
+- `ParentBondMode` and `ParentBondActiveSlave` are populated when `ParentBond` resolves to a bond;
+  otherwise they are `N/A`.
 - `Vlan` is the VLAN ID, or `Untagged`.
 
 ### Bonds CSV columns
@@ -243,7 +248,7 @@ All host names, addresses and MAC addresses are fictitious. The full sample file
 ### Console
 
 ```text
-Invoke-SgNetworkPortReport version 0.9.0
+Invoke-SgNetworkPortReport version 0.9.2
 Enter the URL, FQDN or IP address of the StorageGRID Primary Admin Node: https://grid-admin.example.com:8443/
 Password for admin@grid-admin.example.com (also used for sudo): **************
 Connecting to admin@grid-admin.example.com:22 and running run-each-node --parallel (this can take a minute) ...
@@ -263,7 +268,7 @@ Text report : C:\Reports\sg-network-report\20261022T113002_sg-network-report.txt
 ### Text report (excerpt)
 
 ```text
-StorageGRID Network Port Report (Invoke-SgNetworkPortReport version 0.9.0)
+StorageGRID Network Port Report (Invoke-SgNetworkPortReport version 0.9.2)
 Generated: 2026-10-22 11:30:03 (UTC+11:00)
 Primary Admin Node: grid-admin.example.com
 Nodes: 3
@@ -309,11 +314,22 @@ Node: dc1-sn2    Port Bond Mode: Fixed
 
 ### Summary CSV (selected columns)
 
-| Node | PortBondMode | GridParentBond | GridVlan | GridSpeed | AdminInterface | AdminPorts | AdminSpeed | ClientParentBond | ClientVlan | ClientSpeed | IssueCount |
-|------|--------------|----------------|----------|-----------|----------------|------------|------------|------------------|------------|-------------|-----------:|
-| dc1-gw1 | N/A (no bond interfaces) | None | Untagged | 10 Gb/s | eth1 | N/A | N/A | N/A | N/A | N/A | 0 |
-| dc1-sn1 | Aggregate/LACP | bond0 | 100 | 100 Gb/s | eth1 | mtc1 | 1 Gb/s | bond0 | Untagged | 100 Gb/s | 0 |
-| dc1-sn2 | Fixed | bond0 | Untagged | 25 Gb/s | eth1 | N/A | N/A | bond1 | 200 | 25 Gb/s | 1 |
+The table below includes both classic `bond0`/`bond1` examples and an appliance-style Admin
+Network example where `eth1` is itself a bond interface.
+
+| Node | PortBondMode | GridParentBond | GridParentBondMode | GridParentBondActiveSlave | GridVlan | GridSpeed | AdminInterface | AdminParentBond | AdminParentBondMode | AdminParentBondActiveSlave | AdminPorts | AdminSpeed | ClientParentBond | ClientParentBondMode | ClientParentBondActiveSlave | ClientVlan | ClientSpeed | IssueCount |
+|------|--------------|----------------|--------------------|---------------------------|----------|-----------|----------------|-----------------|---------------------|----------------------------|------------|------------|------------------|----------------------|-----------------------------|------------|-------------|-----------:|
+| dc1-gw1 | N/A (no bond interfaces) | None | N/A | N/A | Untagged | 10 Gb/s | eth1 | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | N/A | 0 |
+| dc1-sn1 | Aggregate/LACP | bond0 | IEEE 802.3ad Dynamic link aggregation | N/A | 100 | 100 Gb/s | eth1 | None | N/A | N/A | mtc1 | 1 Gb/s | bond0 | IEEE 802.3ad Dynamic link aggregation | N/A | Untagged | 100 Gb/s | 0 |
+| dc1-sn2 | Fixed | bond0 | fault-tolerance (active-backup) | hic2 | Untagged | 25 Gb/s | eth1 | N/A | N/A | N/A | N/A | N/A | bond1 | fault-tolerance (active-backup) | hic1 | 200 | 25 Gb/s | 1 |
+| dc1-adm1 | Aggregate/LACP | bond0 | IEEE 802.3ad Dynamic link aggregation | N/A | 134 | 200 Gb/s | eth1 | eth1 | fault-tolerance (active-backup) | mtc1 | mtc1 | 1 Gb/s | bond0 | IEEE 802.3ad Dynamic link aggregation | N/A | 13 | 200 Gb/s | 2 |
+
+Example (CSV row) for a node where Admin `eth1` is a bond:
+
+```text
+Node,AdminInterface,AdminParentBond,AdminParentBondMode,AdminParentBondActiveSlave,AdminPorts,AdminSpeed
+dc1-adm1,eth1,eth1,fault-tolerance (active-backup),mtc1,mtc1,1 Gb/s
+```
 
 ### Bonds CSV
 
