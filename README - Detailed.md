@@ -1,12 +1,14 @@
 # SG-Network-Port-Report
 
+**Version 1.0.5** - Node Network Summary heading, clickable dashboard filtering, safe zero-active-member bond reporting, canonical platform discovery and saved-HTML replay. No separate REST credentials. Runtime inference is not a read of installer settings.
+
 `Invoke-SgNetworkPortReport.ps1` is a standalone, read-only PowerShell script that maps the network
 layout of every node in a **NetApp StorageGRID** grid. It shows how the Grid, Admin and Client
 Networks map to bonds, VLANs and physical ports, and reports port and bond speeds, link state,
 LACP status and common problems.
 
 It connects once to the Primary Admin Node over SSH, runs a single `run-each-node --parallel` pass
-to collect data from every node, then builds a set of CSV and text reports on your Windows machine.
+to collect data from every node, then builds a self-contained HTML report plus CSV and text reports on your Windows machine.
 
 > **Disclaimer:** This is a community tool. It is not an official NetApp product and is not
 > supported by NetApp. It only reads configuration and status; it makes no changes to the grid.
@@ -33,11 +35,12 @@ For every node in the grid:
 
 | Item | How it is determined |
 |------|----------------------|
-| **Port Bond Mode** | `bond0` and `bond1` present = **Fixed**; only `bond0` = **Aggregate/LACP**; no StorageGRID bond interfaces = **N/A (no bond interfaces)** (for example, VMs) |
+| **Port Bond Mode** | Separate Grid/Client bonds infer Fixed. Shared LACP or a Grid-only LACP bond with hic1-hic4 infers Aggregate. A Grid-only Active-Backup appliance pair infers Fixed. Ambiguous two-member LACP stays Unknown. Verified inventory may supply installer mode. Confirmed VMware/Baremetal is N/A and skipped. |
+| **Network Bond Mode** | Independently observed per network: LACP, Active-Backup, Independent, Unknown or Not observed. Fixed can also use LACP. |
 | **Grid Network** (`eth0`) | Parent bond from `eth0@bondN` in `ip link show` |
 | **Admin Network** (`eth1`) | Parent bond (including non-standard names such as `eth1` on some appliances) or physical port (for example, `mtc1`) |
 | **Client Network** (`eth2`) | Parent bond from `eth2@bondN` in `ip link show` |
-| **VLAN ID** | From `/proc/net/vlan/config`. If the interface exists but has no VLAN entry, it is **Untagged** |
+| **VLAN ID** | Successful `/proc/net/vlan/config` evidence gives numeric tags or Untagged; failed/unavailable VLAN collection gives Unknown. |
 | **Network speed** | Effective speed of the bond or port carrying the network |
 | **MTU, IP address, state** | From `ip -o link show` / `ip -o addr show` |
 | **Bond members** | Member ports, each port's speed, duplex and status, and the bond's effective speed |
@@ -66,14 +69,22 @@ No PowerShell modules are needed, and nothing is installed on the grid.
    Unblock-File .\Invoke-SgNetworkPortReport.ps1
    ```
 
-2. Run it and answer the prompts:
+2. Verify the Admin Node SSH host key against a fingerprint from a trusted source before running collection:
+
+  ```powershell
+  ssh -o StrictHostKeyChecking=ask admin@grid-admin.example.com
+  ```
+
+  Exit after verification. Add `-p <port>` for a non-default port. The collector uses strict host-key checking; do not bypass unknown/changed key failures.
+
+3. Run it and answer the prompts:
 
    ```powershell
-   .\Invoke-SgNetworkPortReport.ps1
+  .\Invoke-SgNetworkPortReport.ps1 -OpenReport
    ```
 
    ```text
-  Invoke-SgNetworkPortReport version 0.9.2
+  Invoke-SgNetworkPortReport version 1.0.5
    Enter the URL, FQDN or IP address of the StorageGRID Primary Admin Node: https://grid-admin.example.com:8443/
    Password for admin@grid-admin.example.com (also used for sudo): **************
    Connecting to admin@grid-admin.example.com:22 and running run-each-node --parallel (this can take a minute) ...
@@ -82,7 +93,15 @@ No PowerShell modules are needed, and nothing is installed on the grid.
    You can enter a URL, FQDN or IP address. The URL scheme, port and path are removed, and SSH
    always uses `-SshPort` (default 22).
 
-3. Open the reports in the `.\sg-network-report` folder.
+4. Review the primary HTML report in `.\sg-network-report`. `-OpenReport` opens it automatically.
+
+The standalone HTML embeds all CSV/text downloads. It includes sortable node comparison, port bond mode, separate per-network bond modes, VLAN filtering, node/address search, attention-only filtering and expandable network/bond/port evidence. Filters on VLAN and bond mode must match the same selected network. Reset restores natural ascending node order.
+
+The six dashboard totals are native keyboard-accessible buttons. Nodes observed resets all result filters; Fixed, Aggregate and Unknown mode set the matching port-mode filter; Needs review selects actionable nodes; Incomplete selects actionable nodes whose evidence is incomplete. Clicking a total clears unrelated form filters so its initial results match the global count. Clicking the active total again returns to all nodes. The active button exposes `aria-pressed`, and reset clears dashboard-specific state. Search and additional filters can narrow the incomplete category; unchecking Attention only removes that dashboard scope. Global counts, exports and grid-wide warnings do not change as result rows are filtered.
+
+The report describes observed runtime state, not every Appliance Installer setting: absent interfaces are not proven disabled, negotiated speeds do not reveal configured Auto/fixed link speed, and role/model metadata is not collected. Expected node membership is not independently verified; review incomplete nodes and other collector output for coverage gaps. Collection errors remain actionable; unresolved port modes and expected software visibility limits are informational, not an automatic failure or a healthy verdict. Different VLANs across nodes are not automatically errors; identical Grid/Client VLAN observations on a shared Aggregate bond are flagged.
+
+Topology and VLAN confidence are independent. If `/proc/net/vlan/config` is unavailable on a virtual guest, VLANs remain Unknown without discarding known unbonded topology. Guest evidence cannot expose hypervisor/switch-side tagging. An inactive optional Admin/Client interface without a global address is retained as `Inactive; enablement unknown`, not automatically treated as an enabled link failure. The Grid Network is always checked; addressed optional networks still receive down-link checks.
 
 If your execution policy blocks the script, you can run it for the current session only:
 
@@ -96,7 +115,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SgNetworkPortRe
 # Provide the Admin Node up front and choose an output folder
 .\Invoke-SgNetworkPortReport.ps1 -Target grid-admin.example.com -OutputDir C:\Temp\sg-net
 
-# Keep the raw collector output and the per-port CSV (useful for troubleshooting)
+# Keep raw collector output for troubleshooting; the ports CSV is always retained
 .\Invoke-SgNetworkPortReport.ps1 -KeepIntermediateOutputs
 
 # Show which run-each-node launch method was used
@@ -105,6 +124,27 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SgNetworkPortRe
 # Re-build the reports from a saved raw file, without connecting to the grid
 .\Invoke-SgNetworkPortReport.ps1 -InputPath .\sg-network-report\20261022T113002_sg-network-raw.txt
 ```
+
+## Applicability, Discovery And Attention
+
+`N/A - VMware` and `N/A - Baremetal` are appliance-setting skips, not failures. The same SSH/sudo collection session first calls the installed `Bycast::Helpers::DynipStatic.nodes` helper on the Admin Node and emits only `hostname`, `platform` and `nodeType`. Observed canonical values vSphere, Linux and SGA map to VMware, Baremetal and Appliance. There is no REST-account prompt, SSH-password reuse against a REST login, token extraction, or extra PowerShell module. Only nodes actually collected are matched; metadata-only records do not become invented collected nodes. Malformed, unsupported and conflicting records are ignored safely. Explicit verified inventory takes precedence.
+
+The helper is an internal StorageGRID implementation and may vary across versions. Its standard dependencies are loaded on the node; failures/timeouts return only a short status/class rather than a raw exception or HTTP headers, and network collection continues. The local helper handles its own loopback service protection; its protection token is never copied into report output. When the Linux `timeout` utility exists, metadata discovery is limited to 20 seconds; otherwise the installed helper's request behavior and overall SSH collection timeout apply.
+
+Per-node DMI manufacturer/product and container-boundary hints remain a fallback. A VMware host with a detected container is not automatically classified as VMware; container presence alone is insufficient to identify a customer-hosted versus appliance node. For older saved reports or explicit operator overrides, optionally use exported StorageGRID network topology (`/private/network-topology`, `gridNodes[].nodeConfig.platform`) or a verified CSV through `-NodeInventoryPath`. JSON may be wrapped in `data` or `sg_network_topology`. Automatically discovered `GridPlatform`, `GridNodeType` and `GridMetadataSource` are preserved in saved HTML and reused offline without another login.
+
+```csv
+Node,Platform,PortBondMode,RequiredPorts
+example-vm-01,vsphere,,
+example-linux-01,Baremetal,,
+example-appliance-01,appliance,Fixed,hic2;hic4
+```
+
+Node/hostname matches are exact and case-insensitive, not MAC or name-pattern guesses. Accepted platform labels include VMware/vsphere, Baremetal/linux/docker/container (as verified inventory values), and appliance. Optional PortBondMode is Fixed/Aggregate; RequiredPorts is a space-, semicolon- or comma-separated list. Duplicate identities and invalid mode/port values are rejected. Inventory represents operator-confirmed facts; it is not automatically verified with the appliance.
+
+Unknown deployment/type or mode remains visible without automatically creating attention. `NeedsReview` reflects actionable findings, while `PortBondStatus` is Skipped, Unresolved or Assessed. `PortBondSource` distinguishes verified inventory and inferred topology. `Notes` / `VisibilityNotes` record coverage and wiring limitations. A legacy report without per-command status is not claimed to be freshly or fully validated.
+
+The software-node VLAN table can be absent, with tags configured on the host/vSwitch; that is an expected visibility limitation and not an error. Permission failures and failed essential collection remain actionable. Unbonded legacy nodes can be skipped without inventing VMware/Baremetal identity. In Aggregate mode, down members with zero link-failure history and an active traffic path may be unused supported links: the down states are retained as notes and in port details, not silently discarded. Required ports missing/down, positive failure history, no active links, LACP mismatches, half duplex and conflicting Aggregate/Active-Backup inventory remain findings. Unknown/missing failure history is not treated as zero. See [NetApp's reduced-port Aggregate support](https://docs.netapp.com/us-en/storagegrid-appliances/installconfig/gathering-installation-information-sg6000.html#port-bond-modes).
 
 ## Parameters
 
@@ -117,8 +157,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SgNetworkPortRe
 | `-SshExecutable` | `ssh` | Path to `ssh.exe`, if it is not on `PATH`. |
 | `-TimeoutSeconds` | `900` | Maximum time to wait for the collection to finish. |
 | `-OutputDir` | `.\sg-network-report` | Folder for the reports (created if needed). |
-| `-KeepIntermediateOutputs` | off | Keep the raw collector output and the per-port CSV. |
-| `-InputPath` | | Re-parse a saved raw collector file instead of connecting. The file is never deleted. |
+| `-KeepIntermediateOutputs` | off | Keep newly collected raw output; every report remains available. |
+| `-OpenReport` | off | Open the primary HTML report in the default browser. |
+| `-InputPath` | | Reassess saved raw output or embedded HTML evidence without connecting or modifying the input. |
+| `-NodeInventoryPath` | | Optional verified deployment/installer/wiring CSV or network-topology JSON. |
 | `-Verbose` | off | Show the run-each-node launch attempts and other detail. |
 
 ## How it works
@@ -145,8 +187,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Invoke-SgNetworkPortRe
    example, bonding on a VM) are tolerated.
 3. The output is parsed on Windows and mapped to nodes, networks, bonds and ports. The script then
    writes the reports.
-4. After a successful run, it deletes the intermediate files (the raw output and the ports CSV)
-   unless you use `-KeepIntermediateOutputs`. If a run fails, the raw output is always kept.
+4. After successful HTML generation, it deletes only newly collected raw output unless you use `-KeepIntermediateOutputs`. All reports remain. Offline input is never removed; a failed live run keeps raw evidence.
 
 ## Password handling
 
@@ -167,17 +208,18 @@ sorted and grouped together.
 
 | File | Kept | Contents |
 |------|------|----------|
+| `<ts>_sg-network-report.html` | Always | Primary self-contained interactive overview, node details and embedded CSV/text exports |
 | `<ts>_sg-network-summary.csv` | Always | One row per node: bond mode and Grid/Admin/Client details, plus issues |
 | `<ts>_sg-network-bonds.csv` | Always | One row per bond: mode, networks, speeds, members, LACP details |
 | `<ts>_sg-network-report.txt` | Always | Human-readable report: overview, issues, and per-node network, bond and port tables |
-| `<ts>_sg-network-ports.csv` | With `-KeepIntermediateOutputs` | One row per physical port |
+| `<ts>_sg-network-ports.csv` | Always | One row per physical port |
 | `<ts>_sg-network-raw.txt` | With `-KeepIntermediateOutputs`, or on failure | Raw tagged collector output (can be re-parsed with `-InputPath`) |
 
 ### Summary CSV columns
 
-`Node`, `DataComplete`, `PortBondMode`, `Bonds`; then for each of `Grid`, `Admin` and `Client`:
+`Node`, `DataComplete`, `PortBondMode`, `Bonds`, `PortBondEvidence`; additional assessment fields include `Deployment`, `DeploymentEvidence`, `PortBondStatus`, `PortBondSource`, `CoreDataComplete`, `NeedsReview`, `VlanSource`, `VisibilityNotes`, `RequiredPorts`. For each of `Grid`, `Admin` and `Client`:
 `<Net>Interface`, `<Net>ParentBond`, `<Net>ParentBondMode`, `<Net>ParentBondActiveSlave`,
-`<Net>Vlan`, `<Net>Ports`, `<Net>Speed`, `<Net>Mtu`, `<Net>Address`, `<Net>State`; then
+`<Net>NetworkBondMode`, `<Net>Vlan`, `<Net>Ports`, `<Net>Speed`, `<Net>Mtu`, `<Net>Address`, `<Net>State`, `<Net>Observation`; then
 `BondSummary`, `IssueCount`, `Issues`.
 
 - `ParentBond` is `None` when the network uses a physical port directly, such as on VMs or `eth1`
@@ -186,7 +228,7 @@ sorted and grouped together.
   appliances), not only `bond0`/`bond1`.
 - `ParentBondMode` and `ParentBondActiveSlave` are populated when `ParentBond` resolves to a bond;
   otherwise they are `N/A`.
-- `Vlan` is the VLAN ID, or `Untagged`.
+- `Vlan` is the VLAN ID, `Untagged`, `Unknown`, or `Not observed`.
 
 ### Bonds CSV columns
 
@@ -234,6 +276,10 @@ The **ISSUES** section of the text report, and the `Issues` column of the summar
 - Incomplete data collected from a node.
 
 ## Sample output
+
+Saved raw files and self-contained HTML reports can both be replayed with `-InputPath`; HTML replay reads only the JSON evidence and never executes the input scripts. Report generation keeps the original generated timestamp and notes absent transport metadata. Example: `.\Invoke-SgNetworkPortReport.ps1 -InputPath .\previous-report.html -NodeInventoryPath .\node-inventory.csv -OutputDir .\reviewed -OpenReport`.
+
+The examples below are retained **legacy 0.9.2 output**. Version 1.0.0 uses the HTML report as its primary output, separates port/network bond modes, and reports insufficient evidence as Unknown. The historical examples are not a current classifier specification.
 
 The samples below come from a small example grid. The example grid has:
 
